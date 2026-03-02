@@ -63,7 +63,7 @@ class MushafPageViewState extends State<MushafPageView> {
   late PageController _pageController;
   int _currentPage = 1;
   int? _selectedVerseKey; // chapterNumber * 1000 + verseNumber
-  int? _audioVerseKey;
+  int? _currentAudioVerseKey;
   bool _showControls = true;
   StreamSubscription? _audioSubscription;
 
@@ -86,14 +86,14 @@ class MushafPageViewState extends State<MushafPageView> {
           if (!mounted) return;
           if (state.currentChapter != null && state.currentVerse != null) {
             final key = state.currentChapter! * 1000 + state.currentVerse!;
-            if (_audioVerseKey != key) {
+            if (_currentAudioVerseKey != key) {
               setState(() {
-                _audioVerseKey = key;
+                _currentAudioVerseKey = key;
               });
             }
-          } else if (state.isPlaying && _audioVerseKey != null) {
+          } else if (!state.isPlaying && _currentAudioVerseKey != null) {
             setState(() {
-              _audioVerseKey = null;
+              _currentAudioVerseKey = null;
             });
           }
         });
@@ -188,7 +188,7 @@ class MushafPageViewState extends State<MushafPageView> {
                             ? _selectedVerseKey
                             : null,
                         audioVerseKey: pageNumber == _currentPage
-                            ? _audioVerseKey
+                            ? _currentAudioVerseKey
                             : null,
                         audioHighlightsColor: widget.audioHighlightsColor,
                         onVerseTap: (chapter, verse) {

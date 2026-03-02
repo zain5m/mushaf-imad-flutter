@@ -88,7 +88,7 @@ class QuranLineImage extends StatelessWidget {
                 ..._buildSelectionHighlights(lineWidth),
 
                 // 🎧 Audio Highlight (animated fill)
-                ..._buildAudioHighlights(assetPath, lineWidth),
+                ..._buildAudioHighlights(assetPath),
 
                 // Verse separators (VerseFasel markers)
                 if (markers.isNotEmpty) _buildMarkers(lineWidth, lineHeight),
@@ -100,35 +100,38 @@ class QuranLineImage extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildAudioHighlights(String assetPath, double lineWidth) {
-    if (audioHighlights.isEmpty) {
-      return [
-        Image.asset(
-          assetPath,
-          package: 'imad_flutter',
-          fit: BoxFit.contain,
-          color: textColor,
-          colorBlendMode: textColor != null ? BlendMode.srcIn : null,
-          errorBuilder: (context, error, stackTrace) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  '⚠️ Missing quran-images/\n'
-                  'Download from: github.com/Itqan-community/mushaf-imad-flutter',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.error.withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-            );
-          },
+  Widget baseImage({
+    required final String assetPath,
+    final Color? color,
+    final BlendMode? colorBlendMode,
+  }) => Image.asset(
+    assetPath,
+    package: 'imad_flutter',
+    fit: BoxFit.contain,
+    color: color ?? textColor,
+    colorBlendMode:
+        colorBlendMode ?? (textColor != null ? BlendMode.srcIn : null),
+    errorBuilder: (context, error, stackTrace) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '⚠️ Missing quran-images/\n'
+            'Download from: github.com/Itqan-community/mushaf-imad-flutter',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 9,
+              color: Theme.of(context).colorScheme.error.withValues(alpha: 0.7),
+            ),
+          ),
         ),
-      ];
+      );
+    },
+  );
+
+  List<Widget> _buildAudioHighlights(String assetPath) {
+    if (audioHighlights.isEmpty) {
+      return [baseImage(assetPath: assetPath)];
     }
 
     return audioHighlights.map((h) {
@@ -136,87 +139,19 @@ class QuranLineImage extends StatelessWidget {
         children: [
           ClipRect(
             clipper: _VerseClipper(0, h.left),
-            child: Image.asset(
-              assetPath,
-              package: 'imad_flutter',
-              fit: BoxFit.contain,
-              color: textColor,
-              colorBlendMode: textColor != null ? BlendMode.srcIn : null,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      '⚠️ Missing quran-images/\n'
-                      'Download from: github.com/Itqan-community/mushaf-imad-flutter',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.error.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: baseImage(assetPath: assetPath),
           ),
           ClipRect(
             clipper: _VerseClipper(h.left, h.right),
-            child: Image.asset(
-              assetPath,
-              package: 'imad_flutter',
-              fit: BoxFit.contain,
+            child: baseImage(
+              assetPath: assetPath,
               color: audioHighlightsColor ?? Colors.blue,
               colorBlendMode: BlendMode.srcIn,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      '⚠️ Missing quran-images/\n'
-                      'Download from: github.com/Itqan-community/mushaf-imad-flutter',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.error.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                );
-              },
             ),
           ),
           ClipRect(
             clipper: _VerseClipper(h.right, 1),
-            child: Image.asset(
-              assetPath,
-              package: 'imad_flutter',
-              fit: BoxFit.contain,
-              color: textColor,
-              colorBlendMode: textColor != null ? BlendMode.srcIn : null,
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      '⚠️ Missing quran-images/\n'
-                      'Download from: github.com/Itqan-community/mushaf-imad-flutter',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.error.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: baseImage(assetPath: assetPath),
           ),
         ],
       );

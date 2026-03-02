@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/quran/quran_data_provider.dart';
@@ -159,9 +160,7 @@ class _QuranPageWidgetState extends State<QuranPageWidget> {
                       child: QuranLineImage(
                         page: widget.pageNumber,
                         line: line,
-                        audioHighlights: audioHighlights
-                            .where((h) => h.line == line)
-                            .toList(),
+                        audioHighlights: audioHighlights,
                         audioHighlightsColor: widget.audioHighlightsColor,
                         selectionHighlights: selectionHighlights,
                         markers: markers,
@@ -169,8 +168,10 @@ class _QuranPageWidgetState extends State<QuranPageWidget> {
 
                         textColor: theme.textColor,
                         onTapUpExact: (tapRatio) {
-                          if (widget.onVerseTap == null || versesOnLine.isEmpty)
+                          if (widget.onVerseTap == null ||
+                              versesOnLine.isEmpty) {
                             return;
+                          }
 
                           PageVerseData? target;
 
@@ -189,16 +190,16 @@ class _QuranPageWidgetState extends State<QuranPageWidget> {
                           }
 
                           // 2. Fallback if tapped on empty space or gap between verses
-                          if (target == null) {
-                            target = markers.isNotEmpty
-                                ? markers.last
-                                : versesOnLine.last;
-                          }
+                          target ??= markers.isNotEmpty
+                              ? markers.last
+                              : versesOnLine.last;
 
-                          print(
-                            "Calling onVerseTap with chapter: ${target?.chapter}, verse: ${target?.number}",
-                          );
-                          widget.onVerseTap!(target!.chapter, target.number);
+                          if (kDebugMode) {
+                            print(
+                              "Calling onVerseTap with chapter: ${target.chapter}, verse: ${target.number}",
+                            );
+                          }
+                          widget.onVerseTap!(target.chapter, target.number);
                         },
                       ),
                     );
