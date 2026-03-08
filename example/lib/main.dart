@@ -665,10 +665,12 @@ class _MushafTypePageState extends State<MushafTypePage> {
             ListTile(
               title: Text(type.name),
               subtitle: Text(_description(type)),
-              leading: Radio<MushafType>(
-                value: type,
-                groupValue: _selected,
+              leading: RadioGroup(
+                groupValue:_selected ,
                 onChanged: (v) => setState(() => _selected = v!),
+                child: Radio<MushafType>(
+                  value: type
+                ),
               ),
               onTap: () => setState(() => _selected = type),
             ),
