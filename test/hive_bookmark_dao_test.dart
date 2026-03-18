@@ -3,13 +3,20 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:imad_flutter/imad_flutter.dart';
+import 'package:async/async.dart';
 
+/// Entry point for HiveBookmarkDao test suite.
+///
+/// This suite verifies CRUD operations, search functionality,
+/// and reactive stream behavior (`watchAll`) for bookmarks.
 void main() {
   late HiveBookmarkDao dao;
+  late Directory tempDir;
 
   setUpAll(() async {
-    final dir = await Directory.systemTemp.createTemp();
-    Hive.init(dir.path);
+    tempDir = await Directory.systemTemp.createTemp();
+
+    Hive.init(tempDir.path);
   });
 
   setUp(() async {
@@ -18,17 +25,40 @@ void main() {
   });
 
   tearDown(() async {
-    await dao.deleteAll();
+    /// Close any open boxes to avoid conflicts
+    await Hive.close();
   });
 
+  tearDownAll(() async {
+    /// Delete all temporary files
+    if (await tempDir.exists()) {
+      await tempDir.delete(recursive: true);
+    }
+  });
+  // setUpAll(() async {
+  //   final dir = await Directory.systemTemp.createTemp();
+  //   Hive.init(dir.path);
+  // });
+
+  // setUp(() async {
+  //   dao = HiveBookmarkDao();
+  //   await dao.deleteAll();
+  // });
+
+  // tearDown(() async {
+  //   await dao.deleteAll();
+  // });
+
+  /// Helper factory method to generate test bookmarks
+  /// with customizable properties.
   Bookmark createBookmark({
     String id = '1',
     int chapter = 2,
     int verse = 255,
     int page = 42,
     int createdAt = 1000,
-    String note = '',
-    List<String> tags = const [],
+    String note = 'note',
+    List<String> tags = const ['tag1'],
   }) {
     return Bookmark(
       id: id,
@@ -42,6 +72,8 @@ void main() {
   }
 
   group('HiveBookmarkDao', () {
+    /// Verifies that inserting a bookmark and retrieving it by ID
+    /// returns the exact same data.
     test('insert and getById returns the same bookmark', () async {
       final bookmark = createBookmark();
 
@@ -53,8 +85,14 @@ void main() {
       expect(result!.id, '1');
       expect(result.chapterNumber, 2);
       expect(result.verseNumber, 255);
+
+      /// Ensure non-existing ID returns null.
+      final missingBookmark = await dao.getById('999');
+      expect(missingBookmark, isNull);
     });
 
+    /// Ensures that `getAll` returns bookmarks sorted
+    /// by `createdAt` in descending order.
     test('getAll returns bookmarks sorted by createdAt descending', () async {
       final b1 = createBookmark(id: '1', createdAt: 1000);
       final b2 = createBookmark(id: '2', createdAt: 2000);
@@ -69,25 +107,112 @@ void main() {
       expect(results.last.id, '1');
     });
 
-    test('watchAll emits updates when bookmark inserted', () async {
-      final stream = dao.watchAll();
+    group('HiveBookmarkDao - watchAll', () {
+      late HiveBookmarkDao dao;
+      setUp(() async {
+        dao = HiveBookmarkDao();
+        await dao.deleteAll();
+      });
 
-      final events = <List<Bookmark>>[];
+      test('emits empty list initially', () async {
+        final queue = StreamQueue(dao.watchAll());
 
-      final sub = stream.listen(events.add);
+        final first = await queue.next;
+        expect(first, isA<List<Bookmark>>());
+        expect(first.length, 0);
 
-      final bookmark = createBookmark();
+        await queue.cancel();
+      });
 
-      await dao.insert(bookmark);
+      test('emits existing bookmarks', () async {
+        final bookmark = createBookmark();
+        await dao.insert(bookmark);
 
-      await Future.delayed(const Duration(milliseconds: 100));
+        final queue = StreamQueue(dao.watchAll());
 
-      expect(events.isNotEmpty, true);
-      expect(events.last.length, 1);
+        final first = await queue.next;
+        expect(first.length, 1);
 
-      await sub.cancel();
+        await queue.cancel();
+      });
+
+      test('emits updated list when bookmark is inserted', () async {
+        final stream = dao.watchAll();
+
+        final expectation = expectLater(
+          stream,
+          emitsInOrder([
+            [],
+            predicate<List<Bookmark>>((value) {
+              expect(value.length, 1);
+              expect(value.first.id, 'id1');
+              return true;
+            }),
+            predicate<List<Bookmark>>((value) {
+              expect(value.length, 2);
+              expect(value.first.id, 'id2');
+              expect(value.first.note, 'new note');
+
+              expect(value.last.id, 'id1');
+              return true;
+            }),
+          ]),
+        );
+
+        await Future.delayed(Duration(milliseconds: 2000));
+        await dao.insert(createBookmark(id: 'id1', createdAt: 100));
+
+        await Future.delayed(Duration(milliseconds: 2000));
+        await dao.insert(
+          createBookmark(id: 'id2', note: 'new note', createdAt: 200),
+        );
+
+        await expectation;
+      });
+
+      test('emits updated list after bookmark deletion', () async {
+        final stream = dao.watchAll();
+        final expectation = expectLater(
+          stream,
+          emitsInOrder([
+            [],
+            predicate<List<Bookmark>>((value) {
+              expect(value.length, 1);
+              expect(value.first.id, 'id1');
+              return true;
+            }),
+            [],
+          ]),
+        );
+
+        await Future.delayed(Duration(milliseconds: 500));
+        await dao.insert(createBookmark(id: 'id1', createdAt: 100));
+
+        await Future.delayed(Duration(milliseconds: 500));
+        await dao.delete('id1');
+
+        await expectation;
+      });
+
+      test('emits bookmarks sorted by createdAt descending', () async {
+        final older = createBookmark(id: '1', createdAt: 100);
+        final newer = createBookmark(id: '2', createdAt: 200);
+
+        await dao.insert(older);
+        await dao.insert(newer);
+
+        final queue = StreamQueue(dao.watchAll());
+
+        final list = await queue.next;
+
+        expect(list.first.id, '2');
+        expect(list.last.id, '1');
+
+        await queue.cancel();
+      });
     });
 
+    /// Tests fetching a bookmark by chapter.
     test('getByChapter returns correct bookmark', () async {
       final b1 = createBookmark(id: '1', chapter: 2);
       final b2 = createBookmark(id: '2', chapter: 2);
@@ -103,6 +228,7 @@ void main() {
       expect(result.length, 2);
     });
 
+    /// Tests fetching a bookmark by verse.
     test('getByVerse returns correct bookmark', () async {
       final bookmark = createBookmark();
 
@@ -114,6 +240,7 @@ void main() {
       expect(result!.id, '1');
     });
 
+    /// Checks existence logic for bookmarks.
     test('existsByVerse returns true when bookmark exists', () async {
       final bookmark = createBookmark();
 
@@ -124,18 +251,36 @@ void main() {
       expect(exists, true);
     });
 
-    test('updateNote updates the bookmark note', () async {
+    test('existsByVerse returns false when bookmark does not exist', () async {
       final bookmark = createBookmark();
 
       await dao.insert(bookmark);
 
-      await dao.updateNote('1', 'important verse');
+      final exists = await dao.existsByVerse(3, 10);
 
-      final result = await dao.getById('1');
-
-      expect(result!.note, 'important verse');
+      expect(exists, false);
     });
 
+    /// Verifies note update affects only targeted bookmark.
+    test('updateNote updates the bookmark note', () async {
+      final bookmark1 = createBookmark();
+      final bookmark2 = createBookmark(id: '2');
+
+      await dao.insert(bookmark1);
+      await dao.insert(bookmark2);
+
+      await dao.updateNote('1', 'new');
+
+      final updatedBookmark = await dao.getById('1');
+
+      final untouchedBookmark = await dao.getById('2');
+
+      expect(updatedBookmark!.note, 'new');
+      expect(untouchedBookmark!.note, isNot('new'));
+      expect(untouchedBookmark.note, 'note');
+    });
+
+    /// Verifies tag replacement logic.
     test('updateTags updates bookmark tags', () async {
       final bookmark = createBookmark();
 
@@ -147,8 +292,11 @@ void main() {
 
       expect(result!.tags.length, 2);
       expect(result.tags.contains('tafseer'), true);
+      expect(result.tags.contains('memorization'), true);
+      expect(result.tags.contains('tag1'), false);
     });
 
+    /// Ensures deletion by ID works correctly.
     test('delete removes bookmark', () async {
       final bookmark = createBookmark();
 
@@ -161,6 +309,7 @@ void main() {
       expect(result, isNull);
     });
 
+    /// Ensures deletion by verse reference works.
     test('deleteByVerse removes matching bookmark', () async {
       final bookmark = createBookmark();
 
@@ -173,6 +322,7 @@ void main() {
       expect(result, isNull);
     });
 
+    /// Ensures clearing all bookmarks works.
     test('deleteAll removes all bookmarks', () async {
       final b1 = createBookmark(id: '1');
       final b2 = createBookmark(id: '2');
@@ -187,37 +337,68 @@ void main() {
       expect(results.isEmpty, true);
     });
 
+    /// Tests search functionality against note content.
     test('search finds bookmark by note', () async {
-      final bookmark = createBookmark(note: 'important verse');
+      final bookmarkWithLongNote = createBookmark(note: 'important verse');
+      final bookmarkWithExactWord = createBookmark(id: '2', note: 'important');
+      final bookmarkWithPartialWord = createBookmark(id: '3', note: 'import');
+      final bookmarkWithoutMatch = createBookmark(id: '4');
 
-      await dao.insert(bookmark);
+      await dao.insert(bookmarkWithLongNote);
+      await dao.insert(bookmarkWithExactWord);
+      await dao.insert(bookmarkWithPartialWord);
+      await dao.insert(bookmarkWithoutMatch);
 
-      final results = await dao.search('important');
+      final upperCaseResults = await dao.search('IMPortant');
+      final lowerCaseResults = await dao.search('important');
+      final noMatchResults = await dao.search('important Ne');
 
-      expect(results.length, 1);
-      expect(results.first.note, 'important verse');
+      expect(upperCaseResults.length, 2);
+      expect(lowerCaseResults.length, 2);
+      expect(noMatchResults, isEmpty);
     });
 
+    /// Tests search functionality against tags.
     test('search finds bookmark by tag', () async {
-      final bookmark = createBookmark(tags: ['tafseer']);
+      final bookmarkWithTag = createBookmark(tags: ['tafseer']);
+      final bookmarkWithUpperTag = createBookmark(id: '2', tags: ['TAFSEER']);
+      final bookmarkWithoutMatch = createBookmark(id: '3', tags: ['fiqh']);
 
-      await dao.insert(bookmark);
+      await dao.insert(bookmarkWithTag);
+      await dao.insert(bookmarkWithUpperTag);
+      await dao.insert(bookmarkWithoutMatch);
 
-      final results = await dao.search('tafseer');
+      final lowerCaseResults = await dao.search('tafseer');
+      final upperCaseResults = await dao.search('TAFSEER');
+      final noMatchResults = await dao.search('hadith');
 
-      expect(results.length, 1);
-      expect(results.first.tags.contains('tafseer'), true);
+      expect(lowerCaseResults.length, 2);
+      expect(lowerCaseResults.first.tags.contains('tafseer'), true);
+      expect(upperCaseResults.length, 2);
+      expect(upperCaseResults.first.tags.contains('tafseer'), true);
+
+      expect(noMatchResults, isEmpty);
     });
 
+    /// Tests search using verse reference format (e.g., "2:255").
     test('search finds bookmark by verse reference', () async {
-      final bookmark = createBookmark();
+      final bookmark1 = createBookmark(); // 2:255
+      final bookmark2 = createBookmark(id: '2', chapter: 3, verse: 7);
+      final bookmark3 = createBookmark(id: '3', chapter: 2, verse: 1);
 
-      await dao.insert(bookmark);
+      await dao.insert(bookmark1);
+      await dao.insert(bookmark2);
+      await dao.insert(bookmark3);
 
-      final results = await dao.search('2:255');
+      final exactMatchResults = await dao.search('2:255');
+      final partialMatchResults = await dao.search('2:');
+      final noMatchResults = await dao.search('5:10');
 
-      expect(results.length, 1);
-      expect(results.first.verseReference, '2:255');
+      expect(exactMatchResults.length, 1);
+      expect(exactMatchResults.first.verseReference, '2:255');
+
+      expect(partialMatchResults.length, 2);
+      expect(noMatchResults, isEmpty);
     });
   });
 }
