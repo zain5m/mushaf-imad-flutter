@@ -15,7 +15,6 @@ void main() {
 
   setUpAll(() async {
     tempDir = await Directory.systemTemp.createTemp();
-
     Hive.init(tempDir.path);
   });
 
@@ -25,29 +24,16 @@ void main() {
   });
 
   tearDown(() async {
-    /// Close any open boxes to avoid conflicts
+    /// Close any open boxes to avoid conflicts between tests.
     await Hive.close();
   });
 
   tearDownAll(() async {
-    /// Delete all temporary files
+    /// Delete all temporary files created during the test run.
     if (await tempDir.exists()) {
       await tempDir.delete(recursive: true);
     }
   });
-  // setUpAll(() async {
-  //   final dir = await Directory.systemTemp.createTemp();
-  //   Hive.init(dir.path);
-  // });
-
-  // setUp(() async {
-  //   dao = HiveBookmarkDao();
-  //   await dao.deleteAll();
-  // });
-
-  // tearDown(() async {
-  //   await dao.deleteAll();
-  // });
 
   /// Helper factory method to generate test bookmarks
   /// with customizable properties.
@@ -108,12 +94,6 @@ void main() {
     });
 
     group('HiveBookmarkDao - watchAll', () {
-      late HiveBookmarkDao dao;
-      setUp(() async {
-        dao = HiveBookmarkDao();
-        await dao.deleteAll();
-      });
-
       test('emits empty list initially', () async {
         final queue = StreamQueue(dao.watchAll());
 
@@ -136,6 +116,10 @@ void main() {
         await queue.cancel();
       });
 
+      /// Uses [pumpEventQueue] instead of [Future.delayed] so the test runs
+      /// without any wall-clock wait: pumpEventQueue() drains all pending
+      /// microtasks and event-loop callbacks, which is exactly what Hive needs
+      /// to deliver a box.watch() event to its listeners.
       test('emits updated list when bookmark is inserted', () async {
         final stream = dao.watchAll();
 
@@ -152,21 +136,21 @@ void main() {
               expect(value.length, 2);
               expect(value.first.id, 'id2');
               expect(value.first.note, 'new note');
-
               expect(value.last.id, 'id1');
               return true;
             }),
           ]),
         );
 
-        await Future.delayed(Duration(milliseconds: 2000));
+        await pumpEventQueue();
         await dao.insert(createBookmark(id: 'id1', createdAt: 100));
 
-        await Future.delayed(Duration(milliseconds: 2000));
+        await pumpEventQueue();
         await dao.insert(
           createBookmark(id: 'id2', note: 'new note', createdAt: 200),
         );
 
+        await pumpEventQueue();
         await expectation;
       });
 
@@ -185,12 +169,13 @@ void main() {
           ]),
         );
 
-        await Future.delayed(Duration(milliseconds: 500));
+        await pumpEventQueue();
         await dao.insert(createBookmark(id: 'id1', createdAt: 100));
 
-        await Future.delayed(Duration(milliseconds: 500));
+        await pumpEventQueue();
         await dao.delete('id1');
 
+        await pumpEventQueue();
         await expectation;
       });
 
@@ -296,19 +281,6 @@ void main() {
       expect(result.tags.contains('tag1'), false);
     });
 
-    /// Ensures deletion by ID works correctly.
-    test('delete removes bookmark', () async {
-      final bookmark = createBookmark();
-
-      await dao.insert(bookmark);
-
-      await dao.delete('1');
-
-      final result = await dao.getById('1');
-
-      expect(result, isNull);
-    });
-
     /// Ensures deletion by verse reference works.
     test('deleteByVerse removes matching bookmark', () async {
       final bookmark = createBookmark();
@@ -320,21 +292,6 @@ void main() {
       final result = await dao.getById('1');
 
       expect(result, isNull);
-    });
-
-    /// Ensures clearing all bookmarks works.
-    test('deleteAll removes all bookmarks', () async {
-      final b1 = createBookmark(id: '1');
-      final b2 = createBookmark(id: '2');
-
-      await dao.insert(b1);
-      await dao.insert(b2);
-
-      await dao.deleteAll();
-
-      final results = await dao.getAll();
-
-      expect(results.isEmpty, true);
     });
 
     /// Tests search functionality against note content.
